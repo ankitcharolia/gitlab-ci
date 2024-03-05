@@ -1,0 +1,90 @@
+cache:
+  key: "$CI_COMMIT_REF_SLUG"
+  paths:
+    - ".terragrunt-cache"
+    - ".terragrunt-cache/plugins"
+    - "**/.terraform.lock.hcl"
+
+stages:
+  - init
+  - plan
+  - apply
+
+variables:
+  TF_VAR_use_k8s_external_endpoint: "false"
+
+.job_template:
+  image: hashicorp/terraform:1.7.5
+  before_script:
+    - apk add --no-cache curl
+    - export TERRAGRUNT_VERSION=$(curl --silent "https://api.github.com/repos/gruntwork-io/terragrunt/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+    - curl -LO "https://github.com/gruntwork-io/terragrunt/releases/download/${TERRAGRUNT_VERSION}/terragrunt_linux_amd64"
+    - chmod +x terragrunt_linux_amd64
+    - mv terragrunt_linux_amd64 /usr/local/bin/terragrunt
+    - export GOOGLE_APPLICATION_CREDENTIALS=$GOOGLE_APPLICATION_CREDENTIALS
+
+.init:
+  extends: .job_template
+  script:
+    - echo "Running Terragrunt init"
+    - terragrunt run-all init -upgrade --terragrunt-working-dir ${TG_WORKING_DIR} --terragrunt-non-interactive
+    - terragrunt run-all providers lock -platform=linux_amd64 --terragrunt-working-dir ${TG_WORKING_DIR} --terragrunt-non-interactive
+  stage: init
+  variables:
+    GOOGLE_PROJECT: $GOOGLE_PROJECT
+  tags:
+    - $GOOGLE_PROJECT-runner
+  artifacts:
+    untracked: true  # artifact everything, excluding git-tracked files
+    expire_in: 1 hour
+
+.plan:
+  extends: .job_template
+  script:
+    - echo "Running Terragrunt plan"
+    - terragrunt run-all plan --terragrunt-working-dir ${TG_WORKING_DIR} --terragrunt-source-update --terragrunt-non-interactive
+  stage: plan
+  variables:
+    GOOGLE_PROJECT: $GOOGLE_PROJECT
+  tags:
+    - $GOOGLE_PROJECT-runner
+
+.apply:
+  extends: .job_template
+  script:
+    - echo "Running Terragrunt apply"
+    - terragrunt run-all apply --terragrunt-working-dir ${TG_WORKING_DIR} --terragrunt-parallelism 4 --terragrunt-non-interactive
+  stage: apply
+  variables:
+    GOOGLE_PROJECT: $GOOGLE_PROJECT
+  tags:
+    - $GOOGLE_PROJECT-runner
+
+infrastructure-init:play:
+  extends: .init
+  variables:
+    GOOGLE_PROJECT: gcp-play
+    GOOGLE_APPLICATION_CREDENTIALS: $GCP_PLAY_GITLAB_CI_SA_KEY
+    TG_WORKING_DIR: terraform/play
+
+
+infrastructure-plan:play:
+  extends: .plan
+  needs: ["infrastructure-init:play"]
+  variables:
+    GOOGLE_PROJECT: gcp-play
+    GOOGLE_APPLICATION_CREDENTIALS: $GCP_PLAY_GITLAB_CI_SA_KEY
+    TG_WORKING_DIR: terraform/play
+  resource_group: infrastructure-play # if you push multiple commits in a short interval, multiple pipelines start running simultaneously. Running multiple deployment scripts to the same infrastructure could harm/confuse the instance and leave it in a corrupted state in the worst case.
+
+infrastructure-deploy:play:
+  extends: .apply
+  needs: ["infrastructure-init:play", "infrastructure-plan:play"]
+  variables:
+    GOOGLE_PROJECT: gcp-play
+    GOOGLE_APPLICATION_CREDENTIALS: $GCP_PLAY_GITLAB_CI_SA_KEY
+    TG_WORKING_DIR: terraform/play
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
+  resource_group: infrastructure-play

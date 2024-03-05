@@ -1,0 +1,35 @@
+# Reference: https://gitlab.com/gitlab-org/gitlab-runner/-/issues/27300
+default:
+  tags:
+    - kube-runner
+
+docker-build-push:
+  stage: build
+  image:
+    name: docker:stable
+  services:
+    - name: docker:dind
+      # In docker 19.03+, TLS behavior is enabled by default. When enabled, the Docker daemon will be started with --host=tcp://0.0.0.0:2376 --tlsverify ... (and when disabled, the Docker daemon will be started with --host=tcp://0.0.0.0:2375).
+      # Reference: https://hub.docker.com/_/docker
+      command: ["--tls=false"]
+
+  variables:
+    DOCKER_HOST: tcp://docker:2375/
+    REGISTRY_HOST: us-central-1a-docker.pkg.dev
+    # Use the overlayfs driver for improved performance:
+    DOCKER_DRIVER: overlay2
+    DOCKER_TLS_CERTDIR: ""
+
+
+  before_script:
+    # Login to Google Cloud Registry
+    - cat $GOOGLE_CREDENTIAL_SERVICE_ACCOUNT | docker login -u _json_key --password-stdin https://$REGISTRY_HOST
+
+  script:
+    - docker build -t $REGISTRY_HOST/<PROJECT_NAME>/images/nginx:1.0.0 .
+    - docker push $REGISTRY_HOST/<PROJECT_NAME>/images/nginx:1.0.0
+
+  rules:
+  - if: $CI_COMMIT_BRANCH
+    exists:
+      - Dockerfile
