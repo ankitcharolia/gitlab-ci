@@ -54,13 +54,14 @@ gcp-auth:
 docker-build-and-push:
   stage: build-and-push
   image:
-    name: docker:stable
+    name: docker:27.4
   services:
-    - name: docker:dind
+    - name: docker:27.4-dind
       command: ["--tls=false"]
 
+
   variables:
-    DOCKER_HOST: tcp://docker:2375/
+    DOCKER_HOST: tcp://docker:2375/    #  tcp://127.0.0.1:2375/
     REGISTRY_HOST: europe-west3-docker.pkg.dev
     # Use the overlayfs driver for improved performance:
     DOCKER_DRIVER: overlay2

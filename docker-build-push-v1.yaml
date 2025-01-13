@@ -6,15 +6,15 @@ default:
 docker-build-push:
   stage: build
   image:
-    name: docker:stable
+    name: docker:27.4
   services:
-    - name: docker:dind
+    - name: docker:27.4-dind
       # In docker 19.03+, TLS behavior is enabled by default. When enabled, the Docker daemon will be started with --host=tcp://0.0.0.0:2376 --tlsverify ... (and when disabled, the Docker daemon will be started with --host=tcp://0.0.0.0:2375).
       # Reference: https://hub.docker.com/_/docker
       command: ["--tls=false"]
 
   variables:
-    DOCKER_HOST: tcp://docker:2375/
+    DOCKER_HOST: tcp://docker:2375/ # tcp://0.0.0.0:2375
     REGISTRY_HOST: us-central-1a-docker.pkg.dev
     # Use the overlayfs driver for improved performance:
     DOCKER_DRIVER: overlay2
